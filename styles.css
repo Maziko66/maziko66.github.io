@@ -164,6 +164,14 @@ body, html {
     font-family: 'Lucida Console', 'Lucida Sans Unicode', monospace;
     color: white;
     margin-bottom: 15px;
+    text-align: center; 
+}
+
+.portfolio-title-margin {
+    font-size: 20px;
+    font-family: 'Lucida Console', 'Lucida Sans Unicode', monospace;
+    color: white;
+    margin-bottom: 15px;
     margin-top: -12px;
     text-align: center; 
 }
@@ -171,7 +179,7 @@ body, html {
 .portfolio-artwork-credit {
     font-size: 12px;
     font-family: 'Lucida Console', 'Lucida Sans Unicode', monospace;
-    color: white;
+    color: gray;
     margin-bottom: -5px;
     margin-top: -5px;
     text-align: center; 
