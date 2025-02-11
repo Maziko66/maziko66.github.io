@@ -196,6 +196,17 @@ body, html {
     text-align: center; 
 }
 
+
+.static-text {
+    position: fixed; 
+    bottom: 10px; 
+    right: 10px; 
+    font-size: 12px; 
+    color: rgba(40, 40, 40, 1);
+    font-family: 'Lucida Console', 'Lucida Sans Unicode', monospace;
+    z-index: 1000;
+}
+
 a {
     color: mediumvioletred;
   }

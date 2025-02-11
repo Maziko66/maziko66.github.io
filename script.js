@@ -7,7 +7,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-
     const expandableLinks = document.querySelectorAll('.sidebar .expandable .expand-link');
     expandableLinks.forEach(link => {
         link.addEventListener('click', function (e) {
@@ -16,7 +15,6 @@ document.addEventListener('DOMContentLoaded', function () {
             parent.classList.toggle('open'); 
         });
     });
-
 
     const portfolioLinks = document.querySelectorAll('.portfolio-link');
     const portfolioBoxes = document.querySelectorAll('.portfolio-box');
