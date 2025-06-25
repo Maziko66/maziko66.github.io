@@ -210,3 +210,76 @@ body, html {
 a {
     color: mediumvioletred;
   }
+
+@media (max-width: 700px) {
+  html, body {
+    overflow: auto;
+    height: auto;
+  }
+  .sidebar {
+    width: 80vw;
+    min-width: 0;
+    max-width: 95vw;
+    padding: 10px;
+    font-size: 16px;
+    left: -80vw;
+    animation: slide-in-mobile 1s ease-out forwards;
+  }
+  @keyframes slide-in-mobile {
+    from { left: -80vw; }
+    to { left: 0; }
+  }
+  .sidebar ul li a {
+    font-size: 16px;
+  }
+  .portfolio-box {
+    width: 98vw;
+    min-width: 0;
+    max-width: 99vw;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%) !important;
+    position: absolute;
+    padding: 8px;
+    overflow-y: auto;
+    max-height: 90vh;
+  }
+  .portfolio-content {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .image-links-section img {
+    max-width: 90vw;
+    height: auto;
+  }
+  .description-section {
+    font-size: 15px;
+    padding: 4px;
+  }
+  .title {
+    font-size: 18px;
+    top: 8px;
+    right: 8px;
+    width: 9ch;
+  }
+  .portfolio-title, .portfolio-title-margin {
+    font-size: 17px;
+  }
+  .portfolio-artwork-credit {
+    font-size: 11px;
+  }
+  .static-text {
+    font-size: 10px;
+    bottom: 2px;
+    right: 2px;
+    left: 2px;
+    text-align: center;
+  }
+  #video-background, .background {
+    height: 100vh;
+    width: 100vw;
+    min-width: 100vw;
+    min-height: 100vh;
+    object-fit: cover;
+  }
+}
