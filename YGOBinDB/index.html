@@ -242,6 +242,20 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
 .ban-badge.ban-banned{background:#7f1d1d;color:#fca5a5;}
 .ban-badge.ban-limited{background:#78350f;color:#fcd34d;}
 .ban-badge.ban-semi{background:#1e3a8a;color:#93c5fd;}
+/* Ban tint overlay on search-panel card thumbs */
+.card-thumb.ban-tint-banned::after,.card-thumb.ban-tint-limited::after,.card-thumb.ban-tint-semi::after{
+  content:'';position:absolute;inset:0;pointer-events:none;z-index:2;border-radius:inherit;}
+.card-thumb.ban-tint-banned::after {background:rgba(220,38,38,.30);}
+.card-thumb.ban-tint-limited::after{background:rgba(217,119,6,.28);}
+.card-thumb.ban-tint-semi::after   {background:rgba(37,99,235,.22);}
+/* Ban icon on search-panel card thumbs */
+.card-thumb .ban-icon{position:absolute;bottom:2px;right:2px;font-size:.9rem;line-height:1;
+  pointer-events:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.9));z-index:4;}
+/* Ban badge in list view */
+.list-ban{font-size:.68rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:3px;white-space:nowrap;}
+.list-ban.ban-banned{background:#7f1d1d;color:#fca5a5;}
+.list-ban.ban-limited{background:#78350f;color:#fcd34d;}
+.list-ban.ban-semi{background:#1e3a8a;color:#93c5fd;}
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;
   height:200px;gap:8px;color:var(--txt2);font-size:.85rem;text-align:center;}
 .empty-icon{font-size:2.2rem;}
@@ -825,6 +839,18 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
       <input type="file" id="ydk-input" accept=".ydk,.txt" style="display:none" onchange="importYDK(event)">
     </label>
     <button class="btn btn-red"   onclick="clearDeck()">🗑</button>
+    <span style="color:var(--border2);margin:0 2px">│</span>
+    <label class="pool-label" for="banlist-select">⚖ Format:</label>
+    <select id="banlist-select" onchange="setBanlist(this.value)"
+      style="background:var(--bg2);border:1px solid var(--border2);color:var(--txt);
+      padding:3px 6px;border-radius:5px;font-size:.72rem;cursor:pointer;">
+      <option value="">Unlimited</option>
+      <option value="tcg">TCG</option>
+      <option value="ocg">OCG</option>
+      <option value="goat">GOAT</option>
+      <option value="edison">Edison</option>
+      <option value="md">Master Duel</option>
+    </select>
     <span style="color:var(--border2);margin:0 2px">│</span>
     <label class="pool-label" for="binder-pool-select">🃏 Pool:</label>
     <select id="binder-pool-select" onchange="setBinderPool(this.value)"
@@ -1538,7 +1564,9 @@ const S = {
   selectedSet:null,
   _ftimer:null, _bftimer:null, _sftimer:null, _pftimer:null,
   _mcard:null,
-  _banlist:null, // { banned:Set, limited:Set, semiLimited:Set }
+  _banlist:null,       // legacy (kept for compat)
+  activeBanlist:null,  // 'tcg'|'ocg'|'goat'|null
+  _banlists:{},        // format → {banned:Set, limited:Set, semi:Set}
 };
 
 // ══════════════════════════════════════════════════════════
@@ -1714,6 +1742,7 @@ function normalizeRaw(raw){
     })),
     card_images:imgs,
     prices:(()=>{const p=(raw.card_prices||[])[0]||{}; return {tcgplayer:parseFloat(p.tcgplayer_price)||null,cardmarket:parseFloat(p.cardmarket_price)||null,ebay:parseFloat(p.ebay_price)||null,amazon:parseFloat(p.amazon_price)||null};})(),
+    banlist_info:raw.banlist_info||null,
   };
 }
 
@@ -1958,6 +1987,16 @@ function renderGridView(slice,grid){
       pb.textContent=String(rem);
       el.appendChild(pb);
     }
+    if(S.activeBanlist){
+      const st=getBanStatus(card.name);
+      if(st){
+        el.classList.add(st==='Forbidden'?'ban-tint-banned':st==='Limited'?'ban-tint-limited':'ban-tint-semi');
+        const bi=document.createElement('div'); bi.className='ban-icon';
+        bi.title=st;
+        bi.textContent=st==='Forbidden'?'🚫':st==='Limited'?'1️⃣':'2️⃣';
+        el.appendChild(bi);
+      }
+    }
     el.addEventListener('click',()=>showCard(card));
     el.addEventListener('contextmenu',e=>handleCardCtxMenu(card,e));
     frag.appendChild(el);
@@ -1989,6 +2028,16 @@ function renderListView(slice,container){
     // Deck copy badge
     const copies=deckCopies(card.id);
     if(copies>0){const dc=document.createElement('span');dc.className='list-dc';dc.textContent=`×${copies}`;row.appendChild(dc);}
+    // Banlist badge
+    if(S.activeBanlist){
+      const st=getBanStatus(card.name);
+      if(st){
+        const bi=document.createElement('span');
+        bi.className=`list-ban ${st==='Forbidden'?'ban-banned':st==='Limited'?'ban-limited':'ban-semi'}`;
+        bi.textContent=st==='Forbidden'?'🚫 Banned':st==='Limited'?'1️⃣ Limited':'2️⃣ Semi';
+        row.appendChild(bi);
+      }
+    }
     // Pool remaining badge
     if(S.binderPool){
       const rem=binderPoolRemaining(card.id);
@@ -2255,58 +2304,139 @@ function updateStats(){
   document.getElementById('cnt-extra').textContent=S.deck.extra.length;
   document.getElementById('cnt-side').textContent=S.deck.side.length;
 }
-async function checkLegality(){
-  const summary=document.getElementById('s-ban-summary');
-  if(summary) summary.textContent='Fetching banlist…';
+// ── Banlists ──────────────────────────────────────────────
+const BANLISTS={
+  tcg:    {label:'TCG',          apiParam:'tcg',    field:'ban_tcg'},
+  ocg:    {label:'OCG',          apiParam:'ocg',    field:'ban_ocg'},
+  goat:   {label:'GOAT',         apiParam:'goat',   field:'ban_goat'},
+  edison: {label:'Edison',       static:true},
+  md:     {label:'Master Duel',  apiParam:'md',     field:'ban_md'},
+};
+
+// Edison is a community format (March 2010 TCG) — hardcoded since no API supports it
+const EDISON_BANLIST=(()=>{
+  const banned=new Set([
+    'Black Luster Soldier - Envoy of the Beginning','Chaos Emperor Dragon - Envoy of the End',
+    'Cyber Jar','Cyber-Stein','Dark Magician of Chaos','Destiny HERO - Disk Commander',
+    'Fiber Jar','Magical Scientist','Magician of Faith','Makyura the Destructor',
+    'Sinister Serpent','Tribe-Infecting Virus','Tsukuyomi','Victory Dragon',
+    'Witch of the Black Forest','Yata-Garasu','Thousand-Eyes Restrict','Dark Strike Fighter',
+    'Butterfly Dagger - Elma','Card of Safe Return','Change of Heart','Confiscation',
+    'Dark Hole','Delinquent Duo','Dimension Fusion','Graceful Charity',
+    "Harpie's Feather Duster",'Last Will','Monster Reborn','Metamorphosis',
+    'Mirage of Nightmare','Painful Choice','Pot of Greed','Premature Burial',
+    'Raigeki','Snatch Steal','The Forceful Sentry','Crush Card Virus',
+    'Exchange of the Spirit','Imperial Order','Last Turn','Ring of Destruction','Time Seal',
+  ]);
+  const limited=new Set([
+    'Left Arm of the Forbidden One','Left Leg of the Forbidden One',
+    'Right Arm of the Forbidden One','Right Leg of the Forbidden One',
+    'Blackwing - Gale the Whirlwind','Card Trooper','Chaos Sorcerer','Dark Armed Dragon',
+    'Elemental HERO Stratos','Exodia the Forbidden One','Gladiator Beast Bestiari',
+    'Lumina, Lightsworn Summoner','Marshmallon','Mezuki','Mind Master','Morphing Jar',
+    'Necroface','Necro Gardna','Neo-Spacian Grand Mole','Night Assailant',
+    'Plaguespreader Zombie','Rescue Cat','Gorz the Emissary of Darkness','Sangan',
+    'Snipe Hunter','Spirit Reaper','Summoner Monk','Tragoedia',
+    'Black Rose Dragon','Brionac, Dragon of the Ice Barrier','Goyo Guardian',
+    'Advanced Ritual Art','Allure of Darkness','Brain Control',
+    'Burial from a Different Dimension','Card Destruction','Charge of the Light Brigade',
+    'Cold Wave','Destiny Draw','Emergency Teleport','Foolish Burial','Future Fusion',
+    'Giant Trunade','Heavy Storm','Level Limit - Area B','Limiter Removal','Megamorph',
+    'Mind Control','Monster Gate','Mystical Space Typhoon','One for One','Overload Fusion',
+    'Reasoning','Reinforcement of the Army','Scapegoat','Swords of Revealing Light',
+    'Call of the Haunted','Ceasefire','Gravity Bind','Magic Cylinder','Magical Explosion',
+    'Mind Crush','Mirror Force','Ojama Trio','Return from the Different Dimension',
+    'Solemn Judgment','The Transmigration Prophecy','Torrential Tribute',
+    'Trap Dustshoot','Wall of Revealing Light',
+  ]);
+  const semi=new Set([
+    'Cyber Dragon','Dandylion','Destiny HERO - Malicious','Goblin Zombie','Honest',
+    'Judgment Dragon','Lonefire Blossom','Treeborn Frog','Demise, King of Armageddon',
+    'Black Whirlwind','Chain Strike','Gold Sarcophagus','Magical Stone Excavation',
+    'United We Stand','Bottomless Trap Hole','Royal Decree','Royal Oppression',
+    'Skill Drain','Ultimate Offering',
+  ]);
+  return {banned,limited,semi};
+})();
+
+function getBanStatus(cardName){
+  const fmt=S.activeBanlist;
+  if(!fmt||!S._banlists[fmt]) return null;
+  const bl=S._banlists[fmt];
+  if(bl.banned.has(cardName))  return 'Forbidden';
+  if(bl.limited.has(cardName)) return 'Limited';
+  if(bl.semi.has(cardName))    return 'Semi-Limited';
+  return null;
+}
+
+async function fetchBanlistData(format){
+  if(format==='edison') return EDISON_BANLIST; // static hardcoded list, no API needed
+  const cacheKey=`ygo_banlist_${format}`;
   try{
-    if(!S._banlist){
-      const r=await fetch('https://db.ygoprodeck.com/api/v7/cardinfo.php?banlist=tcg&num=9999&offset=0&misc=yes');
-      const d=await r.json();
-      const banned=new Set(), limited=new Set(), semiLimited=new Set();
-      for(const c of (d.data||[])){
-        const misc=(c.misc_info||[])[0]||{};
-        const bl=misc.tcg_ban_status;
-        if(bl==='Banned') banned.add(c.name);
-        else if(bl==='Limited') limited.add(c.name);
-        else if(bl==='Semi-Limited') semiLimited.add(c.name);
-      }
-      S._banlist={banned,limited,semiLimited};
-    }
-    applyBanBadges();
-  }catch(e){ if(summary) summary.textContent='Banlist fetch failed'; console.warn('[YGO] Banlist error',e); }
+    const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');
+    if(cached&&cached.ts&&Date.now()-cached.ts<86400000)
+      return {banned:new Set(cached.banned),limited:new Set(cached.limited),semi:new Set(cached.semi)};
+  }catch{}
+  const cfg=BANLISTS[format]; if(!cfg) return null;
+  const r=await fetch(`https://db.ygoprodeck.com/api/v7/cardinfo.php?banlist=${cfg.apiParam}`);
+  if(!r.ok) throw new Error(`Banlist HTTP ${r.status}`);
+  const d=await r.json();
+  const banned=new Set(), limited=new Set(), semi=new Set();
+  for(const c of (d.data||[])){
+    const val=(c.banlist_info||{})[cfg.field];
+    if(val==='Forbidden'||val==='Banned') banned.add(c.name);
+    else if(val==='Limited')             limited.add(c.name);
+    else if(val==='Semi-Limited')        semi.add(c.name);
+  }
+  const result={banned,limited,semi};
+  try{ localStorage.setItem(cacheKey,JSON.stringify({ts:Date.now(),banned:[...banned],limited:[...limited],semi:[...semi]})); }catch{}
+  return result;
+}
+
+async function setBanlist(format){
+  const sel=document.getElementById('banlist-select');
+  S.activeBanlist=format||null;
+  if(sel){ sel.style.borderColor=format?'var(--gold)':'var(--border2)'; sel.value=format||''; }
+  if(format&&!S._banlists[format]){
+    const summary=document.getElementById('s-ban-summary');
+    if(summary) summary.textContent='⏳ Loading banlist…';
+    try{ S._banlists[format]=await fetchBanlistData(format); }
+    catch(e){ if(summary) summary.textContent='❌ Fetch failed'; console.warn('[YGO] Banlist error',e); return; }
+  }
+  applyBanBadges();
+  applyFilters(); // re-render search panel with ban icons
+}
+
+function checkLegality(){
+  if(!S.activeBanlist){ toast('Select a format first (TCG / OCG / GOAT)',true); return; }
+  applyBanBadges();
 }
 
 function applyBanBadges(){
-  const bl=S._banlist; if(!bl) return;
-  const allIds=[...new Set([...S.deck.main,...S.deck.extra,...S.deck.side])];
-  let nBanned=0, nLimited=0, nSemi=0;
-  // Clear existing badges
+  const fmt=S.activeBanlist;
   document.querySelectorAll('.deck-card .ban-badge').forEach(el=>el.remove());
-  ['main','extra','side'].forEach(zone=>{
-    const seen=new Map();
-    for(const id of S.deck[zone]){ seen.set(id,(seen.get(id)||0)+1); }
-    document.querySelectorAll(`#${zone}-grid .deck-card`).forEach((el,i)=>{
-      const id=S.deck[zone][i]; if(!id) return;
-      const card=S.cmap[id]; if(!card) return;
-      const name=card.name;
-      const isBanned=bl.banned.has(name);
-      const isLimited=bl.limited.has(name);
-      const isSemi=bl.semiLimited.has(name);
-      if(isBanned||isLimited||isSemi){
+  let nBanned=0, nLimited=0, nSemi=0;
+  if(fmt&&S._banlists[fmt]){
+    ['main','extra','side'].forEach(zone=>{
+      document.querySelectorAll(`#${zone}-grid .deck-card`).forEach((el,i)=>{
+        const id=S.deck[zone][i]; if(!id) return;
+        const card=S.cmap[id]; if(!card) return;
+        const st=getBanStatus(card.name); if(!st) return;
         const b=document.createElement('div');
-        if(isBanned){b.className='ban-badge ban-banned';b.textContent='BANNED';nBanned++;}
-        else if(isLimited){b.className='ban-badge ban-limited';b.textContent='LTD';nLimited++;}
-        else {b.className='ban-badge ban-semi';b.textContent='S-LTD';nSemi++;}
+        if(st==='Forbidden'){b.className='ban-badge ban-banned';b.textContent='🚫 BANNED';nBanned++;}
+        else if(st==='Limited'){b.className='ban-badge ban-limited';b.textContent='1️⃣ LTD';nLimited++;}
+        else{b.className='ban-badge ban-semi';b.textContent='2️⃣ S-LTD';nSemi++;}
         el.appendChild(b);
-      }
+      });
     });
-  });
+  }
   const parts=[];
-  if(nBanned) parts.push(`⛔ ${nBanned} Banned`);
-  if(nLimited) parts.push(`⚠ ${nLimited} Limited`);
-  if(nSemi) parts.push(`🔵 ${nSemi} Semi-Limited`);
+  if(fmt) parts.push(`[${BANLISTS[fmt]?.label||fmt}]`);
+  if(nBanned)  parts.push(`🚫 ${nBanned} Banned`);
+  if(nLimited) parts.push(`1️⃣ ${nLimited} Limited`);
+  if(nSemi)    parts.push(`2️⃣ ${nSemi} Semi-Limited`);
   const summary=document.getElementById('s-ban-summary');
-  if(summary) summary.textContent=parts.length?parts.join(' · '):'✓ No banlist issues';
+  if(summary) summary.textContent=fmt?(parts.length>1?parts.join(' · '):'✓ No banlist issues'):'';
 }
 
 function sortDeck(){
