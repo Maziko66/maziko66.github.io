@@ -147,6 +147,13 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
 .card-thumb:hover .tip{opacity:1;}
 .card-thumb .dc-badge{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.75);
   color:var(--gold);font-size:.6rem;font-weight:700;padding:1px 4px;border-radius:3px;pointer-events:none;}
+.card-thumb .pool-badge{position:absolute;top:2px;left:2px;background:rgba(14,165,233,.85);
+  color:#fff;font-size:.6rem;font-weight:700;padding:1px 4px;border-radius:3px;pointer-events:none;}
+.card-thumb .pool-badge.pool-empty{background:rgba(220,38,38,.85);}
+.pool-label{font-size:.72rem;color:var(--txt2);white-space:nowrap;}
+.list-pool{font-size:.7rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px;
+  background:rgba(14,165,233,.75);color:#fff;white-space:nowrap;}
+.list-pool.pool-empty{background:rgba(220,38,38,.75);}
 .card-thumb.t-normal{border-color:var(--c-normal);}
 .card-thumb.t-effect{border-color:var(--c-effect);}
 .card-thumb.t-fusion{border-color:var(--c-fusion);}
@@ -818,6 +825,13 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
       <input type="file" id="ydk-input" accept=".ydk,.txt" style="display:none" onchange="importYDK(event)">
     </label>
     <button class="btn btn-red"   onclick="clearDeck()">🗑</button>
+    <span style="color:var(--border2);margin:0 2px">│</span>
+    <label class="pool-label" for="binder-pool-select">🃏 Pool:</label>
+    <select id="binder-pool-select" onchange="setBinderPool(this.value)"
+      style="background:var(--bg2);border:1px solid var(--border2);color:var(--txt);
+      padding:3px 6px;border-radius:5px;font-size:.72rem;max-width:130px;cursor:pointer;">
+      <option value="">— All Cards —</option>
+    </select>
   </div>
 
   <!-- Binder mode header -->
@@ -1513,6 +1527,7 @@ const S = {
   mode:'deck',
   binders:{},
   currentBinder:null,
+  binderPool:null,  // deck-builder card-pool binder name, or null for all cards
   _priceCache:{},  // cardId → {tcgplayer, cardmarket, sets:[{set_code,set_rarity,set_price}]}
   activeBinder:null,
   binderShown:PAGE,
@@ -1576,6 +1591,7 @@ async function init() {
   S.activeBinder = localStorage.getItem(ACTIVE_BINDER_KEY) || null;
   if (S.activeBinder && !S.binders[S.activeBinder]) S.activeBinder = null;
   initBinderPrices();
+  populateBinderPoolSelect();
 
   try {
     let [cards, sets] = await Promise.all([tryLocal(), tryLocalSets()]);
@@ -1753,7 +1769,7 @@ function setMode(mode){
   setsList.style.display = isSets ? 'flex' : 'none';
   setsView.style.display = isSets ? 'flex' : 'none';
 
-  if (mode==='binder') { populateBinderSelect(); renderBinderPanel(); }
+  if (mode==='binder') { populateBinderSelect(); populateBinderPoolSelect(); renderBinderPanel(); }
   if (mode==='sets')   { buildSetIndex(); populateSetsActiveBinder(); renderSetList(); }
   if (mode==='deck')   { renderGrid(); } // refresh deck badges
   if (mode==='pull')   { buildSetIndex(); initPullSimulator(); }
@@ -1830,8 +1846,13 @@ function applyFilters(){
   const dmin=v('f-def-min'), dmax=v('f-def-max');
   const lmin=v('f-lvl-min'), lmax=v('f-lvl-max');
   const pmin=v('f-pend-min'), pmax=v('f-pend-max');
+  // Build pool card-id set when a binder is selected as pool
+  const poolIds = S.binderPool && S.binders[S.binderPool]
+    ? new Set(Object.keys(S.binders[S.binderPool].cards).map(k=>+k.split('|')[0]))
+    : null;
   S.filtered=S.cards.filter(c=>{
-    if(q&&!c.name.toLowerCase().includes(q)&&!(c.description||'').toLowerCase().includes(q)&&!(c.archetype||'').toLowerCase().includes(q)&&!(c.card_sets||[]).some(s=>(s.set_code||'').toLowerCase().includes(q))) return false;
+    if(poolIds && !poolIds.has(c.id)) return false;
+    if(q&&!c.name.toLowerCase().includes(q)&&!(c.description||'').toLowerCase().includes(q)&&!(c.archetype||'').toLowerCase().includes(q)&&!(c.card_sets||[]).some(s=>(s.set_code||'').toLowerCase().includes(q))&&!(c._customName||'').toLowerCase().includes(q)) return false;
     return matchesCardFilters(c,{cat,attr,race,frame,level,moncat,archetype,amin,amax,dmin,dmax,lmin,lmax,pmin,pmax});
   });
   const sort=v('f-sort');
@@ -1928,6 +1949,14 @@ function renderGridView(slice,grid){
     el.appendChild(tip);
     const copies=deckCopies(card.id);
     if(copies>0){const b=document.createElement('div');b.className='dc-badge';b.textContent=`×${copies}`;el.appendChild(b);}
+    if(S.binderPool){
+      const rem=binderPoolRemaining(card.id);
+      const pb=document.createElement('div');
+      pb.className=`pool-badge${rem<=0?' pool-empty':''}`;
+      pb.title=`${rem} left in pool`;
+      pb.textContent=String(rem);
+      el.appendChild(pb);
+    }
     el.addEventListener('click',()=>showCard(card));
     el.addEventListener('contextmenu',e=>handleCardCtxMenu(card,e));
     frag.appendChild(el);
@@ -1959,6 +1988,15 @@ function renderListView(slice,container){
     // Deck copy badge
     const copies=deckCopies(card.id);
     if(copies>0){const dc=document.createElement('span');dc.className='list-dc';dc.textContent=`×${copies}`;row.appendChild(dc);}
+    // Pool remaining badge
+    if(S.binderPool){
+      const rem=binderPoolRemaining(card.id);
+      const pb=document.createElement('span');
+      pb.className=`list-pool${rem<=0?' pool-empty':''}`;
+      pb.title=`${rem} left in pool`;
+      pb.textContent=`${rem} left`;
+      row.appendChild(pb);
+    }
     // Hover image
     row.addEventListener('mouseenter',e=>showListHover(card,e));
     row.addEventListener('mousemove',moveListHover);
@@ -2134,10 +2172,20 @@ const RARITY_OPTIONS=[
 ];
 function refreshBadges(cardId){
   const copies=deckCopies(cardId);
-  document.querySelectorAll(`#card-grid [data-id="${cardId}"]`).forEach(el=>{
-    let b=el.querySelector('.dc-badge');
-    if(copies>0){ if(!b){b=document.createElement('div');b.className='dc-badge';el.appendChild(b);} b.textContent=`×${copies}`; }
+  document.querySelectorAll(`#card-grid [data-id="${cardId}"], #card-list [data-id="${cardId}"]`).forEach(el=>{
+    let b=el.querySelector('.dc-badge,.list-dc');
+    if(copies>0){ if(!b){b=document.createElement(el.classList.contains('list-row')?'span':'div');b.className=el.classList.contains('list-row')?'list-dc':'dc-badge';el.appendChild(b);} b.textContent=`×${copies}`; }
     else if(b) b.remove();
+    // Update pool badge if active
+    if(S.binderPool){
+      const rem=binderPoolRemaining(cardId);
+      let pb=el.querySelector('.pool-badge,.list-pool');
+      const cls=el.classList.contains('list-row')?'list-pool':'pool-badge';
+      if(!pb){ pb=document.createElement(el.classList.contains('list-row')?'span':'div'); pb.className=cls; el.appendChild(pb); }
+      pb.className=`${cls}${rem<=0?' pool-empty':''}`;
+      pb.title=`${rem} left in pool`;
+      pb.textContent=el.classList.contains('list-row')?`${rem} left`:String(rem);
+    }
   });
 }
 
@@ -2148,6 +2196,10 @@ function isExtra(c){ return EXTRA_FRAMES.has(c.frame_type); }
 function deckCopies(id){ return S.deck.main.filter(x=>x===id).length+S.deck.extra.filter(x=>x===id).length+S.deck.side.filter(x=>x===id).length; }
 function addCard(card,forceZone){
   if(card.frame_type==='token'&&!forceZone){toast('Tokens cannot be added to the deck',true);return;}
+  if(S.binderPool){
+    const rem=binderPoolRemaining(card.id);
+    if(rem<=0){toast(`No copies of "${card.name}" left in binder pool`,true);return;}
+  }
   const zone=forceZone||(isExtra(card)?'extra':'main');
   const limit=zone==='main'?MAIN_LIMIT:zone==='extra'?EXTRA_LIMIT:SIDE_LIMIT;
   if(S.deck[zone].length>=limit){toast(`${cap(zone)} Deck is full (${limit} max)`,true);return;}
@@ -2399,7 +2451,7 @@ function promptNewBinder(){
   S.binders[n]={name:n,created:new Date().toISOString(),cards:{}};
   saveBinders();
   S.currentBinder=n;
-  populateBinderSelect();
+  populateBinderSelect(); populateBinderPoolSelect();
   document.getElementById('binder-select').value=n;
   renderBinderPanel();
   toast(`Binder "${n}" created!`);
@@ -2513,7 +2565,7 @@ function promptDeleteBinder(){
   S.currentBinder=null;
   S.binderShown=PAGE;
   saveBinders();
-  populateBinderSelect();
+  populateBinderSelect(); populateBinderPoolSelect();
   renderBinderPanel();
   toast(`Binder "${name}" deleted`);
 }
@@ -2578,6 +2630,39 @@ function populateBinderSelect(){
   const sel=document.getElementById('binder-select');
   if(!sel) return;
   fillBinderOptions(sel, S.currentBinder, '— Select Binder —');
+}
+
+function populateBinderPoolSelect(){
+  const sel=document.getElementById('binder-pool-select');
+  if(!sel) return;
+  const prev=sel.value;
+  sel.innerHTML='<option value="">— All Cards —</option>';
+  Object.keys(S.binders).sort().forEach(n=>{
+    const o=document.createElement('option'); o.value=n; o.textContent=n; sel.appendChild(o);
+  });
+  // Restore selection if still valid
+  if(S.binderPool && S.binders[S.binderPool]) sel.value=S.binderPool;
+  else { sel.value=''; S.binderPool=null; }
+}
+
+function setBinderPool(name){
+  S.binderPool=name||null;
+  // Highlight the pool selector when active
+  const sel=document.getElementById('binder-pool-select');
+  if(sel) sel.style.borderColor=S.binderPool?'var(--gold)':'var(--border2)';
+  applyFilters();
+}
+
+// Total qty of a card across all entries in the active pool binder
+function binderPoolQty(cardId){
+  if(!S.binderPool||!S.binders[S.binderPool]) return Infinity;
+  return binderEntries(S.binderPool,cardId).reduce((s,e)=>s+e.qty,0);
+}
+
+// How many copies remain available (pool total minus already-in-deck copies)
+function binderPoolRemaining(cardId){
+  if(!S.binderPool) return Infinity;
+  return binderPoolQty(cardId)-deckCopies(cardId);
 }
 
 function populateSetsActiveBinder(){
@@ -3415,7 +3500,7 @@ async function importBinder(e){
     S.binders[name]={name,created:new Date().toISOString(),updated:new Date().toISOString(),cards};
     saveBinders();
     S.currentBinder=name;
-    populateBinderSelect();
+    populateBinderSelect(); populateBinderPoolSelect();
     document.getElementById('binder-select').value=name;
     renderBinderPanel();
     toast(`Binder "${name}" imported (${Object.keys(cards).length} cards)!`);
