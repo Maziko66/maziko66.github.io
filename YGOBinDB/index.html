@@ -837,6 +837,7 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
   <!-- Binder mode header -->
   <div class="hdr-section" id="hdr-binder" style="display:none">
     <button class="btn btn-gold"  onclick="promptNewBinder()">+ New Binder</button>
+    <button class="btn btn-dark"  onclick="promptRenameBinder()">✎ Rename</button>
     <button class="btn btn-dark"  onclick="promptMergeBinder()">⇌ Merge</button>
     <button class="btn btn-dark"  onclick="promptAddDifferents()" title="Add only cards not already in this binder">+ Differents</button>
     <button class="btn btn-dark"  onclick="exportBinderJSON()">⬇ JSON</button>
@@ -2549,6 +2550,24 @@ function setActiveBinder(name){
   if(S.selectedSet) renderSetView();
 }
 
+function promptRenameBinder(){
+  if(!S.currentBinder){toast('No binder selected',true);return;}
+  const newName=prompt('Rename binder to:',S.currentBinder);
+  if(!newName||!newName.trim()) return;
+  const n=newName.trim();
+  if(n===S.currentBinder) return;
+  if(S.binders[n]){toast(`A binder named "${n}" already exists`,true);return;}
+  S.binders[n]={...S.binders[S.currentBinder],name:n,updated:new Date().toISOString()};
+  delete S.binders[S.currentBinder];
+  if(S.activeBinder===S.currentBinder) S.activeBinder=n;
+  if(S.binderPool===S.currentBinder) S.binderPool=n;
+  S.currentBinder=n;
+  saveBinders();
+  populateBinderSelect(); populateBinderPoolSelect();
+  document.getElementById('binder-select').value=n;
+  renderBinderPanel();
+  toast(`Binder renamed to "${n}"`);
+}
 function promptClearBinder(){
   if(!S.currentBinder){toast('No binder selected',true);return;}
   if(!confirm(`Clear all cards from "${S.currentBinder}"?`)) return;
