@@ -154,6 +154,9 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
 .list-pool{font-size:.7rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px;
   background:rgba(14,165,233,.75);color:#fff;white-space:nowrap;}
 .list-pool.pool-empty{background:rgba(220,38,38,.75);}
+.card-thumb.pool-dim{opacity:.35;filter:grayscale(.4);}
+.list-row.pool-dim{opacity:.35;filter:grayscale(.4);}
+.deck-card.pool-dim{opacity:.35;filter:grayscale(.4);}
 .card-thumb.t-normal{border-color:var(--c-normal);}
 .card-thumb.t-effect{border-color:var(--c-effect);}
 .card-thumb.t-fusion{border-color:var(--c-fusion);}
@@ -866,6 +869,8 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
     <button class="btn btn-dark"  onclick="promptRenameBinder()">✎ Rename</button>
     <button class="btn btn-dark"  onclick="promptMergeBinder()">⇌ Merge</button>
     <button class="btn btn-dark"  onclick="promptAddDifferents()" title="Add only cards not already in this binder">+ Differents</button>
+    <button class="btn btn-dark"  onclick="exportBinderYDK()" title="Export binder as YDK deck file (one copy per card slot)">⬇ YDK</button>
+    <button class="btn btn-dark"  onclick="exportTCGPlayerMobile()" title="Export as TCGPlayer Collection CSV">⬇ TCGPlayer</button>
     <button class="btn btn-dark"  onclick="exportBinderJSON()">⬇ JSON</button>
     <button class="btn btn-dark"  onclick="exportBinderCSV()">⬇ CSV</button>
     <button class="btn btn-dark"  onclick="exportCollectr()" title="Export as TCGPlayer CSV for Collectr import">⬇ Collectr</button>
@@ -1573,21 +1578,6 @@ const S = {
 // INIT
 // ══════════════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', init);
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { closeZoom(); closeCardModal(); closeCompareModal(); closeLoadModal(); }
-  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); if(S.mode==='deck') saveDeck(); }
-  if ((e.ctrlKey||e.metaKey) && e.key==='f') { e.preventDefault(); document.getElementById('search-input').focus(); }
-  // Skip hotkeys when typing in an input/textarea
-  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable) return;
-  if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();changePage(1);}
-  if(e.key==='ArrowLeft' ||e.key==='ArrowUp')  {e.preventDefault();changePage(-1);}
-  if(e.key==='g'||e.key==='G') setViewMode('grid');
-  if(e.key==='l'||e.key==='L') setViewMode('list');
-  if(e.key==='b'||e.key==='B') setMode('binder');
-  if(e.key==='d'||e.key==='D') setMode('deck');
-  if(e.key==='s'||e.key==='S') setMode('sets');
-  if(e.key==='p'||e.key==='P') setMode('pull');
-});
 
 function setSearchCardSize(px){
   px = Math.max(44, Math.min(160, +px));
@@ -1876,12 +1866,7 @@ function applyFilters(){
   const dmin=v('f-def-min'), dmax=v('f-def-max');
   const lmin=v('f-lvl-min'), lmax=v('f-lvl-max');
   const pmin=v('f-pend-min'), pmax=v('f-pend-max');
-  // Build pool card-id set when a binder is selected as pool
-  const poolIds = S.binderPool && S.binders[S.binderPool]
-    ? new Set(Object.keys(S.binders[S.binderPool].cards).map(k=>+k.split('|')[0]))
-    : null;
   S.filtered=S.cards.filter(c=>{
-    if(poolIds && !poolIds.has(c.id)) return false;
     if(q&&!c.name.toLowerCase().includes(q)&&!(c.description||'').toLowerCase().includes(q)&&!(c.archetype||'').toLowerCase().includes(q)&&!(c.card_sets||[]).some(s=>(s.set_code||'').toLowerCase().includes(q))&&!(c._customName||'').toLowerCase().includes(q)) return false;
     return matchesCardFilters(c,{cat,attr,race,frame,level,moncat,archetype,amin,amax,dmin,dmax,lmin,lmax,pmin,pmax});
   });
@@ -1981,6 +1966,7 @@ function renderGridView(slice,grid){
     if(copies>0){const b=document.createElement('div');b.className='dc-badge';b.textContent=`×${copies}`;el.appendChild(b);}
     if(S.binderPool){
       const rem=binderPoolRemaining(card.id);
+      if(rem<=0) el.classList.add('pool-dim');
       const pb=document.createElement('div');
       pb.className=`pool-badge${rem<=0?' pool-empty':''}`;
       pb.title=`${rem} left in pool`;
@@ -2041,6 +2027,7 @@ function renderListView(slice,container){
     // Pool remaining badge
     if(S.binderPool){
       const rem=binderPoolRemaining(card.id);
+      if(rem<=0) row.classList.add('pool-dim');
       const pb=document.createElement('span');
       pb.className=`list-pool${rem<=0?' pool-empty':''}`;
       pb.title=`${rem} left in pool`;
@@ -2246,10 +2233,6 @@ function isExtra(c){ return EXTRA_FRAMES.has(c.frame_type); }
 function deckCopies(id){ return S.deck.main.filter(x=>x===id).length+S.deck.extra.filter(x=>x===id).length+S.deck.side.filter(x=>x===id).length; }
 function addCard(card,forceZone){
   if(card.frame_type==='token'&&!forceZone){toast('Tokens cannot be added to the deck',true);return;}
-  if(S.binderPool){
-    const rem=binderPoolRemaining(card.id);
-    if(rem<=0){toast(`No copies of "${card.name}" left in binder pool`,true);return;}
-  }
   const zone=forceZone||(isExtra(card)?'extra':'main');
   const limit=zone==='main'?MAIN_LIMIT:zone==='extra'?EXTRA_LIMIT:SIDE_LIMIT;
   if(S.deck[zone].length>=limit){toast(`${cap(zone)} Deck is full (${limit} max)`,true);return;}
@@ -2271,13 +2254,11 @@ function renderZone(zone){
     grid.innerHTML=`<div class="empty-state"><div class="empty-icon">${zone==='main'?'🃏':zone==='extra'?'✨':'⚡'}</div><div>${zone==='main'?'Main Deck is empty — click cards to add':zone==='extra'?'No Extra Deck cards':'Side Deck is empty'}</div></div>`;
     return;
   }
-  const order=[], seen=new Map();
-  for(const id of ids){ if(!seen.has(id)){seen.set(id,0);order.push(id);} seen.set(id,seen.get(id)+1); }
   grid.innerHTML='';
   const frag=document.createDocumentFragment();
-  order.forEach(id=>{
+  const copyCount=new Map(); // track per-card copies rendered so far for pool dimming
+  ids.forEach(id=>{
     const card=S.cmap[id]; if(!card) return;
-    const count=seen.get(id);
     const el=document.createElement('div'); el.className='deck-card';
     const img=document.createElement('img');
     img.src=card.image_url_small||card.image_url; img.alt=card.name; img.loading='lazy'; img.title=card.name;
@@ -2286,7 +2267,10 @@ function renderZone(zone){
     const rm=document.createElement('button'); rm.className='d-remove'; rm.textContent='✕';
     rm.addEventListener('click',e=>{e.stopPropagation();removeCard(id,zone);});
     el.appendChild(rm);
-    if(count>1){const cnt=document.createElement('div');cnt.className='d-count';cnt.textContent=`×${count}`;el.appendChild(cnt);}
+    if(S.binderPool){
+      const n=(copyCount.get(id)||0)+1; copyCount.set(id,n);
+      if(n>binderPoolQty(id)) el.classList.add('pool-dim');
+    }
     el.addEventListener('click',()=>showCard(card));
     frag.appendChild(el);
   });
@@ -3584,6 +3568,60 @@ function exportCollectr(){
   });
   download(rows.map(r=>r.join(',')).join('\n'),'text/csv',safeFile(b.name)+'_collectr.csv');
   toast('Collectr CSV exported! Email it to import@getcollectr.com from your Collectr account email.');
+}
+
+function exportTCGPlayerMobile(){
+  if(!S.currentBinder){toast('No binder selected',true);return;}
+  const b=S.binders[S.currentBinder];
+  const COND_MAP={NM:'Near Mint',LP:'Lightly Played',MP:'Moderately Played',HP:'Heavily Played',D:'Damaged'};
+  const rows=[['Product ID','TCGplayer Id','Product Line','Set Name','Product Name','Title','Number',
+    'Printing','Rarity','Condition','TCG Market Price','TCG Direct Low',
+    'TCG Low Price With Shipping','TCG Low Price','Total Quantity','Add to Quantity',
+    'TCG Marketplace Price','Photo URL']];
+  Object.entries(b.cards).forEach(([key,raw])=>{
+    const e=entryFromRaw(key,raw);
+    const c=S.cmap[e.cardId]; if(!c) return;
+    const name=c._customName||c.name;
+    const cond=COND_MAP[e.condition]||'Near Mint';
+    const price=c.prices?.tcgplayer??'';
+    rows.push([
+      '',                        // Product ID — requires TCGPlayer API
+      '',                        // TCGplayer Id — requires TCGPlayer API
+      'YuGiOh',
+      csvCell(e.setName||''),
+      csvCell(name),
+      '',                        // Title (TCGPlayer leaves this blank)
+      csvCell(e.setCode||''),
+      'Unlimited',
+      csvCell(e.rarity||''),
+      csvCell(cond),
+      price,                     // TCG Market Price
+      '','','',                  // Direct Low / Low+Ship / Low
+      '',                        // Total Quantity
+      e.qty,                     // Add to Quantity
+      '',                        // TCG Marketplace Price
+      '',                        // Photo URL
+    ]);
+  });
+  download(rows.map(r=>r.join(',')).join('\n'),'text/csv',safeFile(b.name)+'_tcgplayer.csv');
+  toast(`TCGPlayer CSV exported: ${rows.length-1} entr${rows.length-1===1?'y':'ies'}`);
+}
+
+function exportBinderYDK(){
+  if(!S.currentBinder){toast('No binder selected',true);return;}
+  const b=S.binders[S.currentBinder];
+  const EXTRA_FRAMES=new Set(['fusion','synchro','xyz','link',
+    'fusion_pendulum','synchro_pendulum','xyz_pendulum']);
+  const main=[], extra=[];
+  Object.entries(b.cards).forEach(([key,raw])=>{
+    const e=entryFromRaw(key,raw);
+    const c=S.cmap[e.cardId]; if(!c) return;
+    const zone=EXTRA_FRAMES.has(c.frame_type)?extra:main;
+    for(let i=0;i<e.qty;i++) zone.push(e.cardId);
+  });
+  const lines=['#main',...main,'#extra',...extra,'!side'];
+  download(lines.join('\n'),'text/plain',safeFile(b.name)+'.ydk');
+  toast(`YDK exported! (${main.length} main / ${extra.length} extra)`);
 }
 
 // Parse a CSV row respecting quoted fields
