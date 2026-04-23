@@ -2519,7 +2519,7 @@ async function importYDK(e){
   }
   S.deck={...S.deck,...nd,name:file.name.replace(/\.ydk$/i,'')};
   document.getElementById('deck-name-input').value=S.deck.name;
-  renderDeck(); renderGrid(); toast(`Imported!${notFound?` (${notFound} unknown IDs skipped)`:''}`);
+  renderDeck(); applyFilters(); toast(`Imported!${notFound?` (${notFound} unknown IDs skipped)`:''}`);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -2783,7 +2783,7 @@ function setBinderPool(name){
   // Highlight the pool selector when active
   const sel=document.getElementById('binder-pool-select');
   if(sel) sel.style.borderColor=S.binderPool?'var(--gold)':'var(--border2)';
-  applyFilters();
+  renderDeck(); applyFilters();
 }
 
 // Total qty of a card across all entries in the active pool binder
