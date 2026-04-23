@@ -866,7 +866,6 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
     <button class="btn btn-dark"  onclick="promptRenameBinder()">✎ Rename</button>
     <button class="btn btn-dark"  onclick="promptMergeBinder()">⇌ Merge</button>
     <button class="btn btn-dark"  onclick="promptAddDifferents()" title="Add only cards not already in this binder">+ Differents</button>
-    <button class="btn btn-dark"  onclick="exportBinderYDK()" title="Export binder as YDK deck file (one copy per card slot)">⬇ YDK</button>
     <button class="btn btn-dark"  onclick="exportBinderJSON()">⬇ JSON</button>
     <button class="btn btn-dark"  onclick="exportBinderCSV()">⬇ CSV</button>
     <button class="btn btn-dark"  onclick="exportCollectr()" title="Export as TCGPlayer CSV for Collectr import">⬇ Collectr</button>
@@ -1574,6 +1573,21 @@ const S = {
 // INIT
 // ══════════════════════════════════════════════════════════
 window.addEventListener('DOMContentLoaded', init);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeZoom(); closeCardModal(); closeCompareModal(); closeLoadModal(); }
+  if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); if(S.mode==='deck') saveDeck(); }
+  if ((e.ctrlKey||e.metaKey) && e.key==='f') { e.preventDefault(); document.getElementById('search-input').focus(); }
+  // Skip hotkeys when typing in an input/textarea
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.isContentEditable) return;
+  if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();changePage(1);}
+  if(e.key==='ArrowLeft' ||e.key==='ArrowUp')  {e.preventDefault();changePage(-1);}
+  if(e.key==='g'||e.key==='G') setViewMode('grid');
+  if(e.key==='l'||e.key==='L') setViewMode('list');
+  if(e.key==='b'||e.key==='B') setMode('binder');
+  if(e.key==='d'||e.key==='D') setMode('deck');
+  if(e.key==='s'||e.key==='S') setMode('sets');
+  if(e.key==='p'||e.key==='P') setMode('pull');
+});
 
 function setSearchCardSize(px){
   px = Math.max(44, Math.min(160, +px));
@@ -3570,23 +3584,6 @@ function exportCollectr(){
   });
   download(rows.map(r=>r.join(',')).join('\n'),'text/csv',safeFile(b.name)+'_collectr.csv');
   toast('Collectr CSV exported! Email it to import@getcollectr.com from your Collectr account email.');
-}
-
-function exportBinderYDK(){
-  if(!S.currentBinder){toast('No binder selected',true);return;}
-  const b=S.binders[S.currentBinder];
-  const EXTRA_FRAMES=new Set(['fusion','synchro','xyz','link',
-    'fusion_pendulum','synchro_pendulum','xyz_pendulum']);
-  const main=[], extra=[];
-  Object.entries(b.cards).forEach(([key,raw])=>{
-    const e=entryFromRaw(key,raw);
-    const c=S.cmap[e.cardId]; if(!c) return;
-    const zone=EXTRA_FRAMES.has(c.frame_type)?extra:main;
-    for(let i=0;i<e.qty;i++) zone.push(e.cardId);
-  });
-  const lines=['#main',...main,'#extra',...extra,'!side'];
-  download(lines.join('\n'),'text/plain',safeFile(b.name)+'.ydk');
-  toast(`YDK exported! (${main.length} main / ${extra.length} extra)`);
 }
 
 // Parse a CSV row respecting quoted fields
