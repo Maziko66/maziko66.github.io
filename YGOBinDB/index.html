@@ -125,6 +125,11 @@ header{background:var(--bg1);border-bottom:2px solid var(--gold);
 select.fsel{flex:1;min-width:70px;background:var(--bg0);border:1px solid var(--border2);
   color:var(--txt);padding:4px 5px;border-radius:4px;font-size:.74rem;cursor:pointer;}
 select.fsel:focus{outline:none;border-color:var(--gold);}
+label.fchk{display:flex;align-items:center;gap:4px;font-size:.74rem;color:var(--txt2);
+  cursor:pointer;white-space:nowrap;padding:3px 6px;border:1px solid var(--border2);
+  border-radius:4px;background:var(--bg0);user-select:none;}
+label.fchk:has(input:checked){border-color:var(--gold);color:var(--gold);}
+label.fchk input{accent-color:var(--gold);cursor:pointer;}
 .atk-row{display:flex;align-items:center;gap:5px;font-size:.73rem;color:var(--txt2);}
 .atk-row input{width:64px;background:var(--bg0);border:1px solid var(--border2);
   color:var(--txt);padding:4px 6px;border-radius:4px;font-size:.73rem;}
@@ -949,6 +954,7 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
         </select>
         <select id="f-race" class="fsel" onchange="applyFilters()"><option value="">Card Type</option></select>
         <select id="f-moncat" class="fsel" onchange="applyFilters()"><option value="">Monster Category</option></select>
+        <label class="fchk"><input type="checkbox" id="f-tuner" onchange="applyFilters()"> Tuner</label>
       </div>
       <!-- Row 3: Archetype | LVL Min–Max -->
       <div class="filter-row stat-row">
@@ -1127,6 +1133,7 @@ select.fsel:focus{outline:none;border-color:var(--gold);}
       <div class="filter-row stat-row" style="flex-wrap:wrap;gap:4px;">
         <select id="bf-archetype" class="fsel" onchange="applyBinderFilters()" style="flex:1;min-width:80px"><option value="">Archetype</option></select>
         <select id="bf-moncat" class="fsel" onchange="applyBinderFilters()" style="flex:1;min-width:80px"><option value="">Monster Cat.</option></select>
+        <label class="fchk"><input type="checkbox" id="bf-tuner" onchange="applyBinderFilters()"> Tuner</label>
         <div class="stat-group"><span class="stat-label">LVL</span>
           <input type="number" id="bf-lvl-min" placeholder="Min" min="0" max="13" step="1" oninput="debouncedBinderFilter()">
           <span class="stat-sep">–</span>
@@ -1838,7 +1845,7 @@ function debouncedFilter(){ clearTimeout(S._ftimer); S._ftimer=setTimeout(applyF
 
 function getLevel(c){ return c.level??c.rank??c.link_rating??null; }
 function matchesCardFilters(c,opts){
-  const {cat,attr,race,frame,level,moncat,archetype,amin,amax,dmin,dmax,lmin,lmax,pmin,pmax}=opts;
+  const {cat,attr,race,frame,level,moncat,archetype,tuner,amin,amax,dmin,dmax,lmin,lmax,pmin,pmax}=opts;
   if(cat==='Monster'&&!c.type.includes('Monster')&&!c.type.includes('Token')) return false;
   if(cat==='Spell'&&!c.type.includes('Spell')) return false;
   if(cat==='Trap'&&!c.type.includes('Trap'))   return false;
@@ -1848,6 +1855,7 @@ function matchesCardFilters(c,opts){
   else if(frame==='__pend_other__'){ if(!['xyz_pendulum','fusion_pendulum','synchro_pendulum','ritual_pendulum'].includes(c.frame_type)) return false; }
   else if(frame&&c.frame_type!==frame) return false;
   if(moncat&&!c.type.includes(moncat)) return false;
+  if(tuner&&!c.type.includes('Tuner')) return false;
   if(archetype&&c.archetype!==archetype) return false;
   if(level){ const lv=+level; if(c.level!==lv&&c.rank!==lv&&c.link_rating!==lv) return false; }
   if(amin&&(c.atk==null||c.atk<+amin)) return false;
@@ -1866,9 +1874,10 @@ function applyFilters(){
   const dmin=v('f-def-min'), dmax=v('f-def-max');
   const lmin=v('f-lvl-min'), lmax=v('f-lvl-max');
   const pmin=v('f-pend-min'), pmax=v('f-pend-max');
+  const tuner=document.getElementById('f-tuner')?.checked||false;
   S.filtered=S.cards.filter(c=>{
     if(q&&!c.name.toLowerCase().includes(q)&&!(c.description||'').toLowerCase().includes(q)&&!(c.archetype||'').toLowerCase().includes(q)&&!(c.card_sets||[]).some(s=>(s.set_code||'').toLowerCase().includes(q))&&!(c._customName||'').toLowerCase().includes(q)) return false;
-    return matchesCardFilters(c,{cat,attr,race,frame,level,moncat,archetype,amin,amax,dmin,dmax,lmin,lmax,pmin,pmax});
+    return matchesCardFilters(c,{cat,attr,race,frame,level,moncat,archetype,tuner,amin,amax,dmin,dmax,lmin,lmax,pmin,pmax});
   });
   const sort=v('f-sort');
   if(sort){
@@ -1893,6 +1902,7 @@ function clearFilters(){
   ['search-input','f-cat','f-attr','f-race','f-level','f-frame','f-moncat','f-archetype',
    'f-atk-min','f-atk-max','f-def-min','f-def-max','f-lvl-min','f-lvl-max','f-pend-min','f-pend-max']
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  const ft=document.getElementById('f-tuner'); if(ft) ft.checked=false;
   applyFilters();
 }
 function loadMore(){ S.shown+=PAGE; renderGrid(); }
@@ -2848,6 +2858,7 @@ function renderBinderPanel(){
   const bfCat=v('bf-cat'), bfAttr=v('bf-attr'), bfRace=v('bf-race');
   const bfLevel=v('bf-level'), bfFrame=v('bf-frame'), bfRarity=v('bf-rarity');
   const bfMoncat=v('bf-moncat'), bfArchetype=v('bf-archetype');
+  const bfTuner=document.getElementById('bf-tuner')?.checked||false;
   const bfLvlMin=v('bf-lvl-min'), bfLvlMax=v('bf-lvl-max');
   const bfAtkMin=v('bf-atk-min'), bfAtkMax=v('bf-atk-max');
   const bfDefMin=v('bf-def-min'), bfDefMax=v('bf-def-max');
@@ -2869,7 +2880,7 @@ function renderBinderPanel(){
       if(!c) return false;
       if(query&&!c.name.toLowerCase().includes(query)&&!(setCode||'').toLowerCase().includes(query)&&!(searchDesc&&(c.description||'').toLowerCase().includes(query))) return false;
       if(bfRarity&&rarity!==bfRarity) return false;
-      return matchesCardFilters(c,{cat:bfCat,attr:bfAttr,race:bfRace,frame:bfFrame,level:bfLevel,moncat:bfMoncat,archetype:bfArchetype,amin:bfAtkMin,amax:bfAtkMax,dmin:bfDefMin,dmax:bfDefMax,lmin:bfLvlMin,lmax:bfLvlMax,pmin:bfPendMin,pmax:bfPendMax});
+      return matchesCardFilters(c,{cat:bfCat,attr:bfAttr,race:bfRace,frame:bfFrame,level:bfLevel,moncat:bfMoncat,archetype:bfArchetype,tuner:bfTuner,amin:bfAtkMin,amax:bfAtkMax,dmin:bfDefMin,dmax:bfDefMax,lmin:bfLvlMin,lmax:bfLvlMax,pmin:bfPendMin,pmax:bfPendMax});
     });
 
   if(bfSort){
